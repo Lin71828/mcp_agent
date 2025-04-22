@@ -1,21 +1,9 @@
 from typing import Any
-# import httpx
+import httpx
 from mcp.server.fastmcp import FastMCP
 from loguru import logger
-# from duckduckgo_search import DDGS
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from openai import OpenAI
-import base64
-import os
-import io
-from dotenv import load_dotenv
-from PIL import Image
 import requests
 from bs4 import BeautifulSoup
-import time
-import shutil
-
 
 # 初始化 FastMCP 服务器
 mcp = FastMCP("tools")
@@ -38,7 +26,7 @@ async def save_to_file(content,output_path) -> str:
 
 @mcp.tool()
 async def search_engine(query:str, ) -> str:
-    """查找和输入内容相关的url, 网站信息需要进一步调用search_url()函数进行查看
+    """查找和输入内容相关的信息, query越简单概括越好, 网站信息需要进一步调用search_url()函数进行查看
 
     参数:
         query: 要搜索的内容
@@ -72,119 +60,68 @@ async def search_engine(query:str, ) -> str:
         print(f"Bing搜索出错: {e}")
         return []  # 出错时返回空列表
 
-def full_page_screenshot(url, output_path='full_page.png'):
-    # 设置Chrome选项
-    chrome_options = Options()
-    chrome_options.add_argument('--headless')  # 无头模式
-    chrome_options.add_argument('--start-maximized')
-    
-    # 初始化浏览器
-    driver = webdriver.Chrome(options=chrome_options)
-    
-    try:
-        driver.get(url)
-        
-        # 获取页面的总高度
-        total_height = driver.execute_script("return document.body.parentNode.scrollHeight")
-        
-        # 设置窗口大小为页面总高度
-        driver.set_window_size(1920, total_height)
-        
-        # 等待页面加载（根据需要调整）
-        driver.implicitly_wait(10)
-        
-        # 保存截图
-        driver.save_screenshot(output_path)
-        # print(f"完整页面截图已保存到: {output_path}")
-    finally:
-        driver.quit()
-
-def analyze_image_with_qwen(image_path, prompt="描述图片内容."):
-    """
-    使用Qwen2-VL模型分析图片并返回描述
+@mcp.tool()
+async def search_url(url: str, query: str) -> str:
+    """对给定url对应的网站的信息进行读取
     
     参数:
-        image_path (str): 要分析的图片路径
-        prompt (str): 对图片的提示问题，默认为"描述图片内容"
+        url: 要搜索的网址
         
     返回:
-        str: 模型生成的图片描述
-    """
-    def convert_image_to_webp_base64(input_image_path):
-        try:
-            with Image.open(input_image_path) as img:
-                byte_arr = io.BytesIO()
-                img.save(byte_arr, format='webp')
-                byte_arr = byte_arr.getvalue()
-                base64_str = base64.b64encode(byte_arr).decode('utf-8')
-                return base64_str
-        except IOError:
-            print(f"Error: Unable to open or convert the image {input_image_path}")
-            return None
-
-    # 加载环境变量
-    load_dotenv()
-
-    # 初始化OpenAI客户端
-    client = OpenAI(
-        api_key=os.environ['API_KEY'], # 从https://cloud.siliconflow.cn/account/ak获取
-        base_url="https://api.siliconflow.cn/v1"
-    )
-
-    # 获取图片的base64编码
-    image_base64 = convert_image_to_webp_base64(image_path)
-    if not image_base64:
-        return None
-
-    # 调用API
-    response = client.chat.completions.create(
-        model="Qwen/Qwen2.5-VL-32B-Instruct",
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/jpeg;base64,{image_base64}",
-                        }
-                    },
-                    {
-                        "type": "text",
-                        "text": "无视无关问题的图片信息, 根据图片内容回答:" + prompt
-                    }
-                ]
-            }
-        ],
-        stream=True
-    )
-
-    # 收集响应
-    result = ""
-    for chunk in response:
-        chunk_message = chunk.choices[0].delta.content
-        if chunk_message:  # 确保chunk_message不是None
-            result += chunk_message
-
-    return result
-
-@mcp.tool()
-async def search_url(url:str,query:str) -> str:
-    """对给定url对应的网站的信息进行读取
-
-    参数:
-        url: 要识别的网站
-        query:要在网站上读取的信息(自然语言描述)
+        str: 包含HTML提取内容
     """
     try:
-        path=f'./tmp/{time.strftime("%Y%m%d_%H%M%S")}.png'
-        full_page_screenshot(url,output_path=path)
-        results=analyze_image_with_qwen(path,query)
-        print(url,":",results)
-        return f"搜索结果 '{results}'"
+        # 第一部分：获取并分析HTML内容
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        
+        # 异步获取HTML内容
+        async with httpx.AsyncClient() as client:
+            html_response = await client.get(url, headers=headers, timeout=10.0)
+            html_response.raise_for_status()
+            
+        soup = BeautifulSoup(html_response.text, 'html.parser')
+        
+        # 移除不需要的标签
+        for element in soup(['script', 'style', 'noscript', 'meta', 'link']):
+            element.decompose()
+        
+        # 提取主要文本内容
+        text_content = soup.get_text('\n', strip=True)
+        text_content = '\n'.join([line for line in text_content.split('\n') if line.strip()])
+        
+        # 提取重要结构化数据
+        structured_data = {
+            'title': soup.title.string if soup.title else '无标题',
+            'headings': {
+                'h1': [h1.get_text(strip=True) for h1 in soup.find_all('h1')],
+                'h2': [h2.get_text(strip=True) for h2 in soup.find_all('h2')],
+                'h3': [h3.get_text(strip=True) for h3 in soup.find_all('h3')],
+            },
+            'links': [{'text': a.get_text(strip=True), 'href': a.get('href')} 
+                     for a in soup.find_all('a') if a.get('href')],
+            'images': [img.get('src') for img in soup.find_all('img') if img.get('src')]
+        }
+        
+        html_analysis = (
+            f"HTML文本内容摘要:\n{text_content[:2000]}...\n\n"
+            # f"结构化数据:\n{json.dumps(structured_data, indent=2, ensure_ascii=False)}"
+        )
+        
+        # 组合两部分结果
+        return (
+            f"网页分析结果:\n\n"
+            f"=== HTML内容 ===\n{html_analysis}\n\n"
+        )
+        
+    except httpx.HTTPError as e:
+        logger.error(f"HTTP请求失败: {e}")
+        return f"无法访问URL: {str(e)}"
     except Exception as e:
-        print("url:error")
-        return f"搜索时出现错误: {e}"
+        logger.error(f"搜索失败: {e}")
+        return f"搜索时出现错误: {str(e)}"
+
 
 if __name__ == "__main__":
     # 初始化并运行服务器

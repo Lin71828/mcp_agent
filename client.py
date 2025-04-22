@@ -129,7 +129,7 @@ class MCPClient:
 
     async def query(self, user_input: str) -> str:
         """处理用户查询并返回响应"""
-        messages = [{"role": "user", "content": user_input}]
+        messages = [{"role": "user", "content": user_input+".如果不能使用手中工具回答请告诉我不能的原因, 要求使用的工具次数尽量少"}]
         tool_calls_count = 0
         
         while True:
