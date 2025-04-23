@@ -91,22 +91,8 @@ async def search_url(url: str, query: str) -> str:
         text_content = soup.get_text('\n', strip=True)
         text_content = '\n'.join([line for line in text_content.split('\n') if line.strip()])
         
-        # 提取重要结构化数据
-        structured_data = {
-            'title': soup.title.string if soup.title else '无标题',
-            'headings': {
-                'h1': [h1.get_text(strip=True) for h1 in soup.find_all('h1')],
-                'h2': [h2.get_text(strip=True) for h2 in soup.find_all('h2')],
-                'h3': [h3.get_text(strip=True) for h3 in soup.find_all('h3')],
-            },
-            'links': [{'text': a.get_text(strip=True), 'href': a.get('href')} 
-                     for a in soup.find_all('a') if a.get('href')],
-            'images': [img.get('src') for img in soup.find_all('img') if img.get('src')]
-        }
-        
         html_analysis = (
             f"HTML文本内容摘要:\n{text_content[:2000]}...\n\n"
-            # f"结构化数据:\n{json.dumps(structured_data, indent=2, ensure_ascii=False)}"
         )
         
         # 组合两部分结果

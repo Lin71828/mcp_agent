@@ -1,0 +1,6 @@
+asyncio
+requests
+python-dotenv
+loguru
+mcp
+tkinter
